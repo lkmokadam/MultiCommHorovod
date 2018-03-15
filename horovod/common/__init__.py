@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
-
+ 
 import ctypes
 import os
 import sysconfig
+import numpy as np
 
 
 def get_ext_suffix():
@@ -37,10 +38,23 @@ MPI_COMMON_LIB_CTYPES = \
                              'mpi_lib' + get_ext_suffix()), mode=ctypes.RTLD_GLOBAL)
 
 
-def init():
+def init(rank_allocation_list=None):
     """A function that initializes Horovod.
+
+    Args:
+      rank_allocation_list: A 2D list to specify node allocation by rank for different communicators.
+        Each row in the list will create a new communicators. If None, horovod will use WORLD Communicator.
+
     """
-    return MPI_COMMON_LIB_CTYPES.horovod_init()
+    if rank_allocation_list is None:
+        rank_allocation_list=[]
+    rank_allocation = np.asarray(rank_allocation_list,dtype=np.intc) 
+    rows = rank_allocation.shape[0]
+    if(rows>0):
+        cols = rank_allocation.shape[1] 
+    else:
+        cols = 0
+    return MPI_COMMON_LIB_CTYPES.horovod_init(ctypes.c_void_p(rank_allocation.ctypes.data), ctypes.c_int(rows), ctypes.c_int(cols))
 
 
 def size():
