@@ -1322,12 +1322,6 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
         MPI_Send(encoded_message.c_str(), (int)encoded_message.length() + 1,
                  MPI_BYTE, RANK_ZERO, TAG_NOTIFY, MPI_COMM_WORLD);
       }
-<<<<<<< HEAD
-      MPIRequestList::SerializeToString(message_list, encoded_message);
-      MPI_Send(encoded_message.c_str(), (int)encoded_message.length() + 1,
-               MPI_BYTE, RANK_ZERO, TAG_NOTIFY, horovod_global.comm);
-=======
->>>>>>> e1cafebd7e6319ab3f3526868a15ca4eab381585
     }
 
     // Rank zero has put all its own tensors in the tensor count table.
@@ -1560,10 +1554,7 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   
-  
   MPI_Comm_free(&horovod_global.comm);
-    
-  MPI_Finalize();
 }
 
 // Start Horovod background thread. Ensure that this is
