@@ -18,6 +18,7 @@ import ctypes
 import os
 import sysconfig
 import numpy as np
+import atexit
 
 
 def get_ext_suffix():
@@ -38,7 +39,7 @@ MPI_COMMON_LIB_CTYPES = \
                              'mpi_lib' + get_ext_suffix()), mode=ctypes.RTLD_GLOBAL)
 
 
-def init(rank_allocation_list=None):
+def init(mpi_init=True ,mpi_finalize=True,rank_allocation_list=None):
     """A function that initializes Horovod.
 
     Args:
@@ -54,8 +55,14 @@ def init(rank_allocation_list=None):
         cols = rank_allocation.shape[1] 
     else:
         cols = 0
-    return MPI_COMMON_LIB_CTYPES.horovod_init(ctypes.c_void_p(rank_allocation.ctypes.data), ctypes.c_int(rows), ctypes.c_int(cols))
+    return MPI_COMMON_LIB_CTYPES.horovod_init(ctypes.c_bool(mpi_init),ctypes.c_bool(mpi_finalize),ctypes.c_void_p(rank_allocation.ctypes.data), ctypes.c_int(rows), ctypes.c_int(cols))
 
+def _close():  
+    """A function used by horovod to close Horovod during normal interpreter termination.
+    """
+    return MPI_COMMON_LIB_CTYPES.horovod_close()
+
+atexit.register(_close)
 
 def size():
     """A function that returns the number of Horovod processes.
@@ -121,7 +128,7 @@ def mpi_threads_supported():
     Returns:
       A boolean value indicating whether MPI multi-threading is supported.
     """
-    mpi_threads_supported = MPI_COMMON_LIB_CTYPES.mpi_threads_supported()
+    mpi_threads_supported = MPI_COMMON_LIB_CTYPES.horovod_mpi_threads_supported()
     if mpi_threads_supported == -1:
         raise ValueError(
             'Horovod has not been initialized; use hvd.init().')

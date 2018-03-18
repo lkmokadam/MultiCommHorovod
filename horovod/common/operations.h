@@ -37,7 +37,12 @@ Status CheckInitialized();
 extern "C" {
 
 // C interface to initialize Horovod.
-void horovod_init(const void *allocation, int row_count, int col_count);
+void horovod_init(bool auto_mpi_init_flag,bool auto_mpi_finalize_flag, const void *allocation, int row_count, int col_count);
+
+// Closes horovod if auto_mpi_finalize=False. This make sure horovod thread do not 
+// call MPI_Finalize while other MPI threads still running and vice versa.
+// if auto_mpi_finalize=true, this function has no effect
+int horovod_close();
 
 // C interface to get index of current Horovod process.
 // Returns -1 if Horovod is not initialized.
@@ -60,25 +65,25 @@ int horovod_local_size();
 int horovod_mpi_threads_supported();
 }
 
-void EnqueueTensorAllreduce(std::shared_ptr<OpContext> context,
-                            std::shared_ptr<Tensor> tensor,
-                            std::shared_ptr<Tensor> output,
-                            std::shared_ptr<ReadyEvent> ready_event,
-                            const std::string name, const int device,
-                            StatusCallback callback);
+Status EnqueueTensorAllreduce(std::shared_ptr<OpContext> context,
+                              std::shared_ptr<Tensor> tensor,
+                              std::shared_ptr<Tensor> output,
+                              std::shared_ptr<ReadyEvent> ready_event,
+                              const std::string name, const int device,
+                              StatusCallback callback);
 
-void EnqueueTensorAllgather(std::shared_ptr<OpContext> context,
-                            std::shared_ptr<Tensor> tensor,
-                            std::shared_ptr<ReadyEvent> ready_event,
-                            const std::string name, const int device,
-                            StatusCallback callback);
+Status EnqueueTensorAllgather(std::shared_ptr<OpContext> context,
+                              std::shared_ptr<Tensor> tensor,
+                              std::shared_ptr<ReadyEvent> ready_event,
+                              const std::string name, const int device,
+                              StatusCallback callback);
 
-void EnqueueTensorBroadcast(std::shared_ptr<OpContext> context,
-                            std::shared_ptr<Tensor> tensor,
-                            std::shared_ptr<Tensor> output, int root_rank,
-                            std::shared_ptr<ReadyEvent> ready_event,
-                            const std::string name, const int device,
-                            StatusCallback callback);
+Status EnqueueTensorBroadcast(std::shared_ptr<OpContext> context,
+                              std::shared_ptr<Tensor> tensor,
+                              std::shared_ptr<Tensor> output, int root_rank,
+                              std::shared_ptr<ReadyEvent> ready_event,
+                              const std::string name, const int device,
+                              StatusCallback callback);
 
 } // namespace common
 } // namespace horovod

@@ -151,6 +151,8 @@ struct HorovodGlobalState {
 
   // The MPI rank, local rank, size, local size, flag indicating whether MPI
   // multi-threading is supported, communicator and allocation data to allocate different nodes to different communicators. 
+  // multi-threading is supported and auto_mpi_finalize indicating whether to
+  // call MPI_Finalize automatically
   int rank = 0;
   int local_rank = 0;
   int size = 1;
@@ -158,6 +160,8 @@ struct HorovodGlobalState {
   bool mpi_threads_supported = false;
   MPI_Comm comm = MPI_COMM_WORLD;
   std::vector<std::vector<int>> allocation_data;
+  bool auto_mpi_init = true;
+  bool auto_mpi_finalize = true;
 
 // The CUDA stream used for data transfers and within-allreduce operations.
 // A naive implementation would use the TensorFlow StreamExecutor CUDA
@@ -209,6 +213,14 @@ static HorovodGlobalState horovod_global;
 
 // Stall-check warning time
 #define STALL_WARNING_TIME std::chrono::seconds(60)
+
+static const Status NOT_INITIALIZED_ERROR = Status::PreconditionError(
+    "Horovod has not been initialized; use hvd.init().");
+
+static const Status SHUT_DOWN_ERROR = Status::Aborted(
+    "Horovod has been shut down. This has been caused by an exception on one "
+    "of the rank or an attempt to allreduce, allgather or broadcast a tensor "
+    "after one of the ranks has finished execution.");
 
 // Store the MPIRequest for a name, and return whether the total count of
 // MPIRequests for that tensor is now equal to the MPI size (and thus we are
@@ -1210,6 +1222,19 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   else
     std::cerr<<"Allocation data is empty, will communicate over in world comm"<<std::endl;
 
+  // Calls MPI_Init if horovod_global.auto_mpi_init is set otherwise prints warning
+  if(horovod_global.auto_mpi_init){
+    int is_mpi_initialized= 0;
+    MPI_Initialized(&is_mpi_initialized);
+    if(!is_mpi_initialized)
+      MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
+  }else{
+    MPI_Query_thread(&provided);
+    std::cerr << "WARNING: Make sure to call MPI_Init before calling "
+                 "hvd.init otherwise horovod will crash." << std::endl;
+  }
+  
+  
   // Get MPI rank to determine if we are rank zero.
   int rank;
   MPI_Comm_rank(horovod_global.comm, &rank);
@@ -1286,15 +1311,23 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
         }
       }
     } else {
-      std::string encoded_message;
-      MPIRequestList message_list;
-      while (!message_queue.empty()) {
-        message_list.add_requests(message_queue.front());
-        message_queue.pop();
+      if (!message_queue.empty()) {
+        std::string encoded_message;
+        MPIRequestList message_list;
+        while (!message_queue.empty()) {
+          message_list.add_requests(message_queue.front());
+          message_queue.pop();
+        }
+        MPIRequestList::SerializeToString(message_list, encoded_message);
+        MPI_Send(encoded_message.c_str(), (int)encoded_message.length() + 1,
+                 MPI_BYTE, RANK_ZERO, TAG_NOTIFY, MPI_COMM_WORLD);
       }
+<<<<<<< HEAD
       MPIRequestList::SerializeToString(message_list, encoded_message);
       MPI_Send(encoded_message.c_str(), (int)encoded_message.length() + 1,
                MPI_BYTE, RANK_ZERO, TAG_NOTIFY, horovod_global.comm);
+=======
+>>>>>>> e1cafebd7e6319ab3f3526868a15ca4eab381585
     }
 
     // Rank zero has put all its own tensors in the tensor count table.
@@ -1340,6 +1373,10 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
           if (reduce) {
             ready_to_reduce.push_back(received_name);
           }
+        }
+        if (received_message_list.shutdown()) {
+          // Received SHUTDOWN request from one of the workers.
+          state.shut_down = true;
         }
       }
 
@@ -1423,6 +1460,16 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
         state.last_stall_check = std::chrono::steady_clock::now();
       }
     } else {
+      if (state.shut_down) {
+        // Send a SHUTDOWN request to the coordinator.
+        std::string encoded_message;
+        MPIRequestList shutdown_request;
+        shutdown_request.set_shutdown(true);
+        MPIRequestList::SerializeToString(shutdown_request, encoded_message);
+        MPI_Send(encoded_message.c_str(), (int)encoded_message.length() + 1,
+                 MPI_BYTE, RANK_ZERO, TAG_NOTIFY, MPI_COMM_WORLD);
+      }
+
       // Notify the coordinator that this node is done sending messages.
       // A DONE message is encoded as a zero-length message.
       MPI_Send(NULL, 0, MPI_BYTE, RANK_ZERO, TAG_NOTIFY, horovod_global.comm);
@@ -1473,14 +1520,57 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   //    ncclCommDestroy(it->second);
   //  }
   //#endif
-  MPI_Finalize();
+
+  // Notify all outstanding operations that Horovod has been shut down
+  // and clear up the tensor table and message queue.
+  std::vector<StatusCallback> callbacks;
+  {
+    std::lock_guard<std::mutex> guard(state.mutex);
+    for (auto it = state.tensor_table.begin(); it != state.tensor_table.end();
+         it++) {
+      callbacks.emplace_back(it->second.callback);
+    }
+    state.tensor_table.clear();
+    while (!state.message_queue.empty()) {
+      state.message_queue.pop();
+    }
+  }
+  for (auto it = callbacks.begin(); it != callbacks.end(); it++) {
+    (*it)(SHUT_DOWN_ERROR);
+  }
+
+  // Calls MPI_Finalize if horovod_global.auto_mpi_finalize is set otherwise prints warning
+  while(true){
+    if(horovod_global.auto_mpi_finalize){
+      int is_mpi_finalized = 0;
+      bool is_warning_shown = false;
+      MPI_Finalized(&is_mpi_finalized);
+      if(!is_mpi_finalized){
+        MPI_Finalize();
+        horovod_global.initialization_done = false;
+        break;
+      }
+      else if(!is_warning_shown)
+      {
+        std::cerr << "WARNING: Horovod waiting for other MPI threads to complete" << std::endl;
+        is_warning_shown=true;
+      }
+        
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  
 }
 
 // Start Horovod background thread. Ensure that this is
 // only done once no matter how many times this function is called.
-void InitializeHorovodOnce(const void  *allocation, int row_count, int col_count) {
+void InitializeHorovodOnce(bool auto_mpi_init,bool auto_mpi_finalize, const void  *allocation, int row_count, int col_count) {
   // Ensure background thread is only started once.
   if (!horovod_global.initialize_flag.test_and_set()) {
+
+    horovod_global.auto_mpi_init = auto_mpi_init;
+    horovod_global.auto_mpi_finalize = auto_mpi_finalize;
+
     const int * allocation_data_arr = (int *) allocation;
     for(auto i = 0 ; i < row_count ; i++){
       std::vector<int> rank_vec;
@@ -1505,15 +1595,18 @@ void InitializeHorovodOnce(const void  *allocation, int row_count, int col_count
 
 Status CheckInitialized() {
   if (!horovod_global.initialization_done) {
-    return Status::PreconditionError(
-        "Horovod has not been initialized; use hvd.init().");
+    return NOT_INITIALIZED_ERROR;
   }
   return Status::OK();
 }
 
 extern "C" {
 
-void horovod_init(const void *allocation, int row_count, int col_count) { InitializeHorovodOnce(allocation, row_count, col_count); }
+void horovod_init(bool auto_mpi_init,bool auto_mpi_finalize, const void *allocation, int row_count, int col_count) { 
+
+  InitializeHorovodOnce(auto_mpi_init,auto_mpi_finalize,allocation, row_count, col_count); 
+  
+}
 
 int horovod_rank() {
   if (!horovod_global.initialization_done) {
@@ -1549,11 +1642,20 @@ int horovod_mpi_threads_supported() {
   }
   return horovod_global.mpi_threads_supported ? 1 : 0;
 }
+
+int horovod_close() {
+  if (!horovod_global.initialization_done) {
+    return -1;
+  }
+
+  horovod_global.auto_mpi_finalize = true;
+  return 1;
+}
 }
 
 // MPI must be initialized and the background thread must be running before
 // this function is called.
-void EnqueueTensorAllreduce(std::shared_ptr<OpContext> context,
+Status EnqueueTensorAllreduce(std::shared_ptr<OpContext> context,
                             std::shared_ptr<Tensor> tensor,
                             std::shared_ptr<Tensor> output,
                             std::shared_ptr<ReadyEvent> ready_event,
@@ -1563,7 +1665,7 @@ void EnqueueTensorAllreduce(std::shared_ptr<OpContext> context,
   MPI_Comm_rank(horovod_global.comm, &rank);
 
   MPIRequest message;
-  message.set_request_rank(rank);
+  message.set_request_rank(horovod_global.rank);
   message.set_tensor_name(name);
   message.set_tensor_type(tensor->dtype());
   message.set_device(device);
@@ -1582,13 +1684,18 @@ void EnqueueTensorAllreduce(std::shared_ptr<OpContext> context,
   e.callback = callback;
 
   std::lock_guard<std::mutex> guard(horovod_global.mutex);
-  horovod_global.tensor_table.emplace(name, std::move(e));
-  horovod_global.message_queue.push(message);
+  if (!horovod_global.shut_down) {
+    horovod_global.tensor_table.emplace(name, std::move(e));
+    horovod_global.message_queue.push(message);
+    return Status::OK();
+  } else {
+    return SHUT_DOWN_ERROR;
+  }
 }
 
 // MPI must be initialized and the background thread must be running before
 // this function is called.
-void EnqueueTensorAllgather(std::shared_ptr<OpContext> context,
+Status EnqueueTensorAllgather(std::shared_ptr<OpContext> context,
                             std::shared_ptr<Tensor> tensor,
                             std::shared_ptr<ReadyEvent> ready_event,
                             const std::string name, const int device,
@@ -1597,7 +1704,7 @@ void EnqueueTensorAllgather(std::shared_ptr<OpContext> context,
   MPI_Comm_rank(horovod_global.comm, &rank);
 
   MPIRequest message;
-  message.set_request_rank(rank);
+  message.set_request_rank(horovod_global.rank);
   message.set_tensor_name(name);
   message.set_tensor_type(tensor->dtype());
   message.set_device(device);
@@ -1615,13 +1722,18 @@ void EnqueueTensorAllgather(std::shared_ptr<OpContext> context,
   e.callback = callback;
 
   std::lock_guard<std::mutex> guard(horovod_global.mutex);
-  horovod_global.tensor_table.emplace(name, std::move(e));
-  horovod_global.message_queue.push(message);
+  if (!horovod_global.shut_down) {
+    horovod_global.tensor_table.emplace(name, std::move(e));
+    horovod_global.message_queue.push(message);
+    return Status::OK();
+  } else {
+    return SHUT_DOWN_ERROR;
+  }
 }
 
 // MPI must be initialized and the background thread must be running before
 // this function is called.
-void EnqueueTensorBroadcast(std::shared_ptr<OpContext> context,
+Status EnqueueTensorBroadcast(std::shared_ptr<OpContext> context,
                             std::shared_ptr<Tensor> tensor,
                             std::shared_ptr<Tensor> output, int root_rank,
                             std::shared_ptr<ReadyEvent> ready_event,
@@ -1631,7 +1743,7 @@ void EnqueueTensorBroadcast(std::shared_ptr<OpContext> context,
   MPI_Comm_rank(horovod_global.comm, &rank);
 
   MPIRequest message;
-  message.set_request_rank(rank);
+  message.set_request_rank(horovod_global.rank);
   message.set_tensor_name(name);
   message.set_tensor_type(tensor->dtype());
   message.set_root_rank(root_rank);
@@ -1652,8 +1764,13 @@ void EnqueueTensorBroadcast(std::shared_ptr<OpContext> context,
   e.callback = callback;
 
   std::lock_guard<std::mutex> guard(horovod_global.mutex);
-  horovod_global.tensor_table.emplace(name, std::move(e));
-  horovod_global.message_queue.push(message);
+  if (!horovod_global.shut_down) {
+    horovod_global.tensor_table.emplace(name, std::move(e));
+    horovod_global.message_queue.push(message);
+    return Status::OK();
+  } else {
+    return SHUT_DOWN_ERROR;
+  }
 }
 
 } // namespace common
