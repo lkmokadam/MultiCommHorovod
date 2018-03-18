@@ -1540,6 +1540,7 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
       bool is_warning_shown = false;
       MPI_Finalized(&is_mpi_finalized);
       if(!is_mpi_finalized){
+        MPI_Comm_free(&horovod_global.comm);
         MPI_Finalize();
         horovod_global.initialization_done = false;
         break;
@@ -1554,7 +1555,7 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   
-  MPI_Comm_free(&horovod_global.comm);
+  
 }
 
 // Start Horovod background thread. Ensure that this is
