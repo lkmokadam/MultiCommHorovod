@@ -81,9 +81,9 @@ install:
 script:
   - |
     if [[ $MPI == "OpenMPI" ]]; then
-      export MPIRUN="mpirun -allow-run-as-root -np 2 -H localhost:2 -bind-to none -map-by slot"
+      export MPIRUN="mpirun -allow-run-as-root -np 4 -H localhost:4 -bind-to none -map-by slot"
     else
-      export MPIRUN="mpirun -np 2"
+      export MPIRUN="mpirun -np 4"
     fi
   
 
@@ -95,6 +95,9 @@ script:
 
   # run TensorFlow MNIST example
   - docker exec $CONTAINER /bin/sh -c "$MPIRUN python /horovod/examples/tensorflow_mnist.py"
+
+  # run TensorFlow MNIST Multicomm example
+  - docker exec $CONTAINER /bin/sh -c "$MPIRUN python /horovod/examples/tensorflow_mnist_multicomm.py"
 
   # download Keras MNIST dataset
   - docker exec $CONTAINER /bin/sh -c "python -c \"from keras.datasets import mnist; mnist.load_data()\""
