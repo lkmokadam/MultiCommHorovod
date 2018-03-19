@@ -85,9 +85,3 @@ From: nvidia/cuda:8.0-cudnn6-runtime-ubuntu16.04
         echo "    StrictHostKeyChecking no" >> /etc/ssh/ssh_config.new && \
         mv /etc/ssh/ssh_config.new /etc/ssh/ssh_config
 
-    # Download examples
-    apt-get install -y --no-install-recommends subversion && \
-        svn checkout https://github.com/uber/horovod/trunk/examples && \
-        rm -rf /examples/.svn
-
-
