@@ -52,7 +52,7 @@ def init(mpi_init=True ,mpi_finalize=True,rank_allocation_list=None):
     rank_allocation = np.asarray(rank_allocation_list,dtype=np.intc) 
     rows = rank_allocation.shape[0]
     if(rows>0):
-        if(len(rank_allocation.shape>1)):
+        if(len(rank_allocation.shape)>1):
             cols = rank_allocation.shape[1]
         else:
             cols = 0
