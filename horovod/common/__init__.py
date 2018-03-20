@@ -54,7 +54,7 @@ def init(mpi_init=True ,mpi_finalize=True,rank_allocation_list=None):
     if(rows>0):
         if(len(rank_allocation.shape>1)):
             cols = rank_allocation.shape[1]
-        else
+        else:
             cols = 0
     else:
         cols = 0
