@@ -21,7 +21,7 @@
 #include <sstream>
 #include <thread>
 #include <unordered_map>
-
+#undef HAVE_NCCL
 #if HAVE_CUDA
 #include <cuda_runtime.h>
 #endif
