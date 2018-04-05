@@ -1540,7 +1540,8 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
       bool is_warning_shown = false;
       MPI_Finalized(&is_mpi_finalized);
       if(!is_mpi_finalized){
-        MPI_Comm_free(&horovod_global.comm);
+        if(horovod_global.comm != MPI_COMM_WORLD)
+          MPI_Comm_free(&horovod_global.comm);
         MPI_Finalize();
         horovod_global.initialization_done = false;
         break;
