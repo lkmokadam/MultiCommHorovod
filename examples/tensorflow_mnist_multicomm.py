@@ -64,7 +64,7 @@ def conv_model(feature, target, mode):
 
 def main(_):
     # Horovod: initialize Horovod.
-    hvd.init([[0,1],[2,3]])
+    hvd.init(allocation_data=[[0,1],[2,3]])
 
     # Download and load MNIST dataset.
     mnist = learn.datasets.mnist.read_data_sets('MNIST-data-%d' % hvd.rank())
