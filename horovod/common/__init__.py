@@ -51,7 +51,10 @@ def init(rank_allocation_list=None):
     rank_allocation = np.asarray(rank_allocation_list,dtype=np.intc) 
     rows = rank_allocation.shape[0]
     if(rows>0):
-        cols = rank_allocation.shape[1] 
+        if(len(rank_allocation.shape)>1):
+            cols = rank_allocation.shape[1]
+        else:
+            cols = 0
     else:
         cols = 0
     return MPI_COMMON_LIB_CTYPES.horovod_init(ctypes.c_void_p(rank_allocation.ctypes.data), ctypes.c_int(rows), ctypes.c_int(cols))

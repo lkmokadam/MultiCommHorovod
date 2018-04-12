@@ -1473,6 +1473,11 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   //    ncclCommDestroy(it->second);
   //  }
   //#endif
+  if(horovod_global.comm != MPI_COMM_WORLD)
+  {
+      MPI_Comm_free(&horovod_global.comm);
+  }
+	
   MPI_Finalize();
 }
 

@@ -64,7 +64,7 @@ def conv_model(feature, target, mode):
 
 def main(_):
     # Horovod: initialize Horovod on 4 ranks.
-    hvd.init([[0,1],[2,3]])
+    hvd.init([2,3])
 
     # Download and load MNIST dataset.
     mnist = learn.datasets.mnist.read_data_sets('MNIST-data-%d' % hvd.rank())
@@ -92,7 +92,7 @@ def main(_):
         hvd.BroadcastGlobalVariablesHook(0),
 
         # Horovod: adjust number of steps based on number of GPUs.
-        tf.train.StopAtStepHook(last_step=20000 // hvd.size()),
+        tf.train.StopAtStepHook(last_step=2000 // hvd.size()),
 
         tf.train.LoggingTensorHook(tensors={'step': global_step, 'loss': loss},
                                    every_n_iter=10),
