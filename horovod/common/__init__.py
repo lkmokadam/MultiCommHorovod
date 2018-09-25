@@ -38,7 +38,7 @@ MPI_COMMON_LIB_CTYPES = \
                              'mpi_lib' + get_ext_suffix()), mode=ctypes.RTLD_GLOBAL)
 
 
-def init(rank_allocation_list=None):
+def init(rank_allocation_list=None, mpi_init = True):
     """A function that initializes Horovod.
 
     Args:
@@ -57,7 +57,8 @@ def init(rank_allocation_list=None):
             cols = 0
     else:
         cols = 0
-    return MPI_COMMON_LIB_CTYPES.horovod_init(ctypes.c_void_p(rank_allocation.ctypes.data), ctypes.c_int(rows), ctypes.c_int(cols))
+    print rows,cols
+    return MPI_COMMON_LIB_CTYPES.horovod_init(ctypes.c_void_p(rank_allocation.ctypes.data), ctypes.c_int(rows), ctypes.c_int(cols), ctypes.c_bool(mpi_init))
 
 
 def size():

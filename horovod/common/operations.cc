@@ -156,6 +156,7 @@ struct HorovodGlobalState {
   int size = 1;
   int local_size = 1;
   bool mpi_threads_supported = false;
+  bool mpi_init = true;
   MPI_Comm comm = MPI_COMM_WORLD;
   std::vector<std::vector<int>> allocation_data;
 
@@ -1203,8 +1204,13 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   // We will ask for multiple threads, so other libraries like mpi4py can
   // be used together with Horovod if multi-threaded MPI is installed.
   int provided;
-  MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
+  if (horovod_global.mpi_init)
+    MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
+  else
+    MPI_Query_thread( &provided );
   
+  std::cerr<<"INFO : MPI Thread level "<<provided<<std::endl;
+
   if(!horovod_global.allocation_data.empty())
     create_communicators(horovod_global.allocation_data);
   else
@@ -1483,7 +1489,7 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
 
 // Start Horovod background thread. Ensure that this is
 // only done once no matter how many times this function is called.
-void InitializeHorovodOnce(const void  *allocation, int row_count, int col_count) {
+void InitializeHorovodOnce(const void  *allocation, int row_count, int col_count, bool mpi_init) {
   // Ensure background thread is only started once.
   if (!horovod_global.initialize_flag.test_and_set()) {
     const int * allocation_data_arr = (int *) allocation;
@@ -1496,6 +1502,7 @@ void InitializeHorovodOnce(const void  *allocation, int row_count, int col_count
       }
       horovod_global.allocation_data.push_back(rank_vec);
     }
+    horovod_global.mpi_init = mpi_init;
     horovod_global.background_thread =
         std::thread(BackgroundThreadLoop, std::ref(horovod_global));
   }
@@ -1518,7 +1525,7 @@ Status CheckInitialized() {
 
 extern "C" {
 
-void horovod_init(const void *allocation, int row_count, int col_count) { InitializeHorovodOnce(allocation, row_count, col_count); }
+void horovod_init(const void *allocation, int row_count, int col_count, bool mpi_init) { InitializeHorovodOnce(allocation, row_count, col_count, mpi_init); }
 
 int horovod_rank() {
   if (!horovod_global.initialization_done) {
